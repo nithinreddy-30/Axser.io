@@ -14,17 +14,15 @@ export interface Garment {
   type: string;
   imageUrl: string;
   timestamp: string;
-  gender: 'Men' | 'Women' | 'Unisex';
+  gender: string;
   brand?: string;
   accessCode?: string;
-  description?: string;
-  userId?: string; // Scoping to user
-  isManual?: boolean;
+  userId?: string;
 }
 
 export interface StylingSuggestion {
   id?: string;
-  userId: string; // Scoping to user
+  userId: string;
   title: string;
   advice: string;
   combination: string[];

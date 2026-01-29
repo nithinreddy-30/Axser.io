@@ -39,7 +39,6 @@ const App: React.FC = () => {
   const [styleAdvice, setStyleAdvice] = useState<StylingSuggestion | null>(null);
   const [requestSent, setRequestSent] = useState(false);
   
-  // Manual Form States
   const [manualName, setManualName] = useState('');
   const [manualBrand, setManualBrand] = useState('');
   const [manualImageUrl, setManualImageUrl] = useState('');
@@ -50,7 +49,6 @@ const App: React.FC = () => {
   const [countdown, setCountdown] = useState<number>(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Scroll Lock Helper
   useEffect(() => {
     const isOverlayOpen = showAuthModal || showLogoutConfirm || showSuccessModal || showRequestSentModal || showScanOverlay || showManualModal || viewingGarment;
     if (isOverlayOpen) {
@@ -89,7 +87,7 @@ const App: React.FC = () => {
           role: isUserAdmin ? 'admin' : 'user'
         });
         setIsAdmin(isUserAdmin);
-      } else {
+      } else if (event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
         setUser(null);
         setIsAdmin(false);
         setWardrobe([]);
@@ -150,8 +148,7 @@ const App: React.FC = () => {
             gender: item.gender || 'Unisex',
             brand: item.brand,
             accessCode: item.accessCode,
-            userId: item.userId,
-            isManual: item.isManual
+            userId: item.userId
           }));
 
           const filteredOutfits = allOutfits.filter(item => item.userId?.toLowerCase() === userEmail);
@@ -238,7 +235,8 @@ const App: React.FC = () => {
                         imageUrl: items.image_endpoint,
                         type: 'Digital Twin',
                         gender: 'Unisex',
-                        timestamp: items.created_at
+                        timestamp: items.created_at,
+                        userId: user.email
                     };
                     setPendingGarment(garment);
                     setRequestSent(true);
@@ -343,7 +341,7 @@ const App: React.FC = () => {
 
     setIsSavingManual(true);
     try {
-      const newGarment: Garment = {
+      const newGarment = {
         id: `MANUAL-${Date.now()}`,
         userId: user.email,
         name: manualName,
@@ -351,16 +349,14 @@ const App: React.FC = () => {
         imageUrl: manualImageUrl,
         type: 'Personal Entry',
         gender: 'Unisex',
-        timestamp: new Date().toISOString(),
-        isManual: true
+        timestamp: new Date().toISOString()
       };
 
       await dbService.saveItem('wardrobe', newGarment);
-      setWardrobe(prev => [...prev, newGarment]);
+      setWardrobe(prev => [...prev, newGarment as Garment]);
       setShowManualModal(false);
       setShowSuccessModal(true);
       
-      // Reset form
       setManualName('');
       setManualBrand('');
       setManualImageUrl('');
@@ -398,8 +394,7 @@ const App: React.FC = () => {
           timestamp: new Date().toISOString(),
           gender: pendingGarment.gender,
           brand: pendingGarment.brand,
-          accessCode: productCode,
-          isManual: false
+          accessCode: productCode
         };
 
         await dbService.saveItem('wardrobe', userGarment);
@@ -451,26 +446,17 @@ const App: React.FC = () => {
     try {
       setShowLogoutConfirm(false);
       await dbService.supabase.auth.signOut();
-    } catch (err) {
-      console.error("Sign out error:", err);
-    } finally {
-      const scanKeys: Record<string, string> = {};
-      for(let i=0; i<localStorage.length; i++){
-          const key = localStorage.key(i);
-          if(key?.startsWith('pending_scan_')) {
-              scanKeys[key] = localStorage.getItem(key)!;
-          }
-      }
-      localStorage.clear(); 
-      Object.entries(scanKeys).forEach(([k,v]) => localStorage.setItem(k, v));
       
-      sessionStorage.clear();
-      setUser(null); 
-      setIsAdmin(false); 
+      // Do NOT call localStorage.clear() as it triggers 'Refresh Token Not Found'
+      // Supabase signOut already clears auth tokens.
+      setCurrentView('home');
       setWardrobe([]);
       setSavedOutfits([]);
       setNotifications([]);
-      setCurrentView('home'); 
+      setUser(null);
+      setIsAdmin(false);
+    } catch (err) {
+      console.error("Sign out error:", err);
     }
   };
 
@@ -501,17 +487,10 @@ const App: React.FC = () => {
     const item = wardrobe.find(i => i.id === id);
     if (!item) return;
 
-    // Strict Rule: Manual or AccessCode items cannot be deleted
-    if (item.accessCode || item.isManual) {
-      alert("Authenticated assets and manual archives are locked for permanent record.");
-      return;
-    }
-
-    if (confirm("Remove this item from your vault?")) {
-      await dbService.deleteItem('wardrobe', id);
-      setWardrobe(prev => prev.filter(item => item.id !== id));
-      setActiveMenuId(null);
-    }
+    // Strict Rule: Products with access code and manually added products cannot be deleted.
+    // Since wardrobe consists ONLY of these two types, all items are permanent records.
+    alert("Authenticated assets and manual archives are locked for permanent record in the vault.");
+    setActiveMenuId(null);
   };
 
   useEffect(() => {
@@ -560,7 +539,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Manual Entry Modal - Updated to overflow-y-auto to prevent "frozen" screen */}
       {showManualModal && (
         <div className="fixed inset-0 z-[110] overflow-y-auto">
           <div className="fixed inset-0 bg-[#0A0A0A]/95 backdrop-blur-xl" onClick={() => setShowManualModal(false)} />
@@ -606,7 +584,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Garment Details Popup - Updated to overflow-y-auto */}
       {viewingGarment && (
         <div className="fixed inset-0 z-[120] overflow-y-auto">
           <div className="fixed inset-0 bg-[#0A0A0A]/95 backdrop-blur-xl" onClick={() => setViewingGarment(null)} />
@@ -844,17 +821,15 @@ const App: React.FC = () => {
                       {activeMenuId === item.id && (
                         <div className="absolute top-14 right-4 w-40 bg-[#1A1A1A] border border-white/10 rounded-2xl p-2 shadow-2xl z-30 animate-in slide-in-up" onClick={(e) => e.stopPropagation()}>
                           <button 
-                            disabled={!!item.accessCode || !!item.isManual}
                             onClick={() => handleRemoveGarment(item.id)} 
-                            className={`w-full text-left px-4 py-3 rounded-xl transition-colors flex items-center gap-2 text-[10px] font-black uppercase tracking-widest ${item.accessCode || item.isManual ? 'opacity-30 cursor-not-allowed text-gray-400' : 'hover:bg-red-500/10 text-red-500'}`}
+                            className="w-full text-left px-4 py-3 rounded-xl transition-colors flex items-center gap-2 text-[10px] font-black uppercase tracking-widest hover:bg-red-500/10 text-red-500"
                           >
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} /></svg>
-                            {item.accessCode || item.isManual ? 'LOCKED' : 'Remove'}
+                            Locked
                           </button>
                         </div>
                       )}
                       
-                      {/* Product Type Badge */}
                       <div className="absolute bottom-4 left-4 z-10 px-3 py-1 bg-black/50 backdrop-blur-md border border-white/5 rounded-full">
                          <span className="text-[8px] font-black uppercase tracking-widest text-white/70">
                             {item.accessCode ? 'Authenticated' : 'Manual Archive'}
